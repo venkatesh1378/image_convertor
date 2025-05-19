@@ -1,26 +1,32 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Style Transfer App</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        body { background-color: #0b6dce; }
+        .card { transition: transform 0.2s; }
+        .card:hover { transform: translateY(-5px); }
+        .instructions { background: #fff; padding: 20px; border-radius: 8px; }
+        .results-section { margin-top: 30px; display: none; }
+        #loading { display: none; margin: 20px 0; }
+        .text-white { color: white; }
+    </style>
 </head>
-
 <body>
     <div class="container mt-5">
-        <h1 class="text-center mb-4">🎭 Style Transfer with Background Replacement</h1>
+        <h1 class="text-center mb-4 text-white">🎭 Style Transfer with Background Replacement</h1>
 
-        <form action="/process" method="post" enctype="multipart/form-data">
+        <form id="uploadForm" enctype="multipart/form-data">
             <div class="row g-3 mb-4">
                 <div class="col-md-6">
-                    <label for="content" class="form-label">Content Image</label>
+                    <label for="content" class="form-label text-white">Content Image</label>
                     <input class="form-control" type="file" id="content" name="content" accept="image/*" required>
                 </div>
                 <div class="col-md-6">
-                    <label for="style" class="form-label">Style Image</label>
+                    <label for="style" class="form-label text-white">Style Image</label>
                     <input class="form-control" type="file" id="style" name="style" accept="image/*" required>
                 </div>
                 <div class="col-12">
@@ -29,13 +35,19 @@
             </div>
         </form>
 
-        {% if show_result %}
-        <div class="results-section">
-            <h3 class="mb-3">Results:</h3>
+        <div id="loading" class="text-center">
+            <div class="spinner-border text-light" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2 text-white">Processing images...</p>
+        </div>
+
+        <div class="results-section" id="resultsSection">
+            <h3 class="mb-3 text-white">Results:</h3>
             <div class="row g-4">
                 <div class="col-md-4">
                     <div class="card">
-                        <img src="data:image/png;base64,{{ content_img }}" class="card-img-top" alt="Content">
+                        <img id="contentPreview" class="card-img-top" alt="Content">
                         <div class="card-body">
                             <p class="card-text text-center">Original Content</p>
                         </div>
@@ -43,7 +55,7 @@
                 </div>
                 <div class="col-md-4">
                     <div class="card">
-                        <img src="data:image/png;base64,{{ style_img }}" class="card-img-top" alt="Style">
+                        <img id="stylePreview" class="card-img-top" alt="Style">
                         <div class="card-body">
                             <p class="card-text text-center">Style Image</p>
                         </div>
@@ -51,11 +63,11 @@
                 </div>
                 <div class="col-md-4">
                     <div class="card">
-                        <img src="data:image/png;base64,{{ result_img }}" class="card-img-top" alt="Result">
+                        <img id="resultPreview" class="card-img-top" alt="Result">
                         <div class="card-body">
                             <p class="card-text text-center">Styled Result</p>
                             <div class="d-grid">
-                                <a href="data:image/png;base64,{{ result_img }}" download="styled_result.png" class="btn btn-success">
+                                <a id="downloadLink" class="btn btn-success">
                                     Download Result
                                 </a>
                             </div>
@@ -64,7 +76,6 @@
                 </div>
             </div>
         </div>
-        {% endif %}
 
         <div class="instructions mt-5">
             <h3>How to Use:</h3>
@@ -78,6 +89,45 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
-</body>
+    <script>
+        document.getElementById('uploadForm').addEventListener('submit', async(e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const loading = document.getElementById('loading');
+            const resultsSection = document.getElementById('resultsSection');
 
+            loading.style.display = 'block';
+            resultsSection.style.display = 'none';
+
+            try {
+                const response = await fetch('/process', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Server error');
+                }
+
+                // Update images
+                document.getElementById('contentPreview').src = `data:image/png;base64,${data.content_img}`;
+                document.getElementById('stylePreview').src = `data:image/png;base64,${data.style_img}`;
+                document.getElementById('resultPreview').src = `data:image/png;base64,${data.result_img}`;
+
+                // Update download link
+                const downloadLink = document.getElementById('downloadLink');
+                downloadLink.href = `data:image/png;base64,${data.result_img}`;
+                downloadLink.download = 'styled_result.png';
+
+                resultsSection.style.display = 'block';
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            } finally {
+                loading.style.display = 'none';
+            }
+        });
+    </script>
+</body>
 </html>
