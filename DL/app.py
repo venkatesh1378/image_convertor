@@ -2,6 +2,7 @@ import os
 from flask import Flask, render_template, request, send_file
 import cv2
 import numpy as np
+from werkzeug.utils import url_quote
 from rembg import remove
 from PIL import Image
 import io
