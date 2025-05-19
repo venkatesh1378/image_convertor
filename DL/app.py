@@ -2,8 +2,8 @@ import os
 from flask import Flask, render_template, request, send_file
 import cv2
 import numpy as np
-from werkzeug.utils import url_quote
 from rembg import remove
+from flask import jsonify
 from PIL import Image
 import io
 import base64
@@ -56,15 +56,15 @@ def process():
         result_bytes = io.BytesIO()
         Image.fromarray(result).save(result_bytes, format='PNG')
         result_bytes.seek(0)
+        return jsonify({
+            'content_img': content_b64,
+            'style_img': style_b64,
+            'result_img': result_b64
+        })
         
-        return render_template('index.html', 
-                             content_img=content_b64,
-                             style_img=style_b64,
-                             result_img=result_b64,
-                             show_result=True)
 
     except Exception as e:
-        return f"Error processing images: {str(e)}", 500
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
