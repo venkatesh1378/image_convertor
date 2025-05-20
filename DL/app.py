@@ -47,7 +47,7 @@ def process():
 
         # Validate file extensions
         if not (content_file.filename.lower().endswith(('.png', '.jpg', '.jpeg')) or \
-           not (style_file.filename.lower().endswith(('.png', '.jpg', '.jpeg'))):
+           not (style_file.filename.lower().endswith(('.png', '.jpg', '.jpeg')))):
             return jsonify({'error': 'Invalid file format'}), 400
 
         # Process images
