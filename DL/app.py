@@ -59,10 +59,10 @@ def handle_processing():
 
         # Return result
         img_byte_arr = io.BytesIO()
-        result_img.save(img_byte_arr, 'JPG')
+        result_img.save(img_byte_arr, 'JPEG')
         img_byte_arr.seek(0)
         
-        return send_file(img_byte_arr, mimetype='image/jpg')
+        return send_file(img_byte_arr, mimetype='image/jpeg')
 
     except Exception as e:
         return jsonify({
