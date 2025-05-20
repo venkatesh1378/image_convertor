@@ -1,96 +1,172 @@
-import os
-import io
-import base64
-import logging
-import numpy as np
-from flask import Flask, request, jsonify, render_template
-from flask_cors import CORS
+from flask import Flask, request, jsonify, send_file
 from PIL import Image
-from rembg import remove
+import numpy as np
+import io
+import logging
+import traceback
 
-# Initialize Flask app
 app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB limit
+app.logger.setLevel(logging.INFO)
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-app.logger.setLevel(logging.DEBUG)
+def validate_image(image):
+    try:
+        img = Image.open(image)
+        img.verify()
+        image.stream.seek(0)  # Reset file pointer
+        return True
+    except Exception as e:
+        app.logger.error(f"Invalid image file: {str(e)}")
+        return False
 
 def process_images(content_img, style_img):
     try:
-        # Add memory cleanup
-        content_img = content_img.copy()
-        style_img = style_img.copy()
+        # Load and convert content image
+        content_image = Image.open(content_img)
+        content_array = np.array(content_image)
         
-        # Handle RGBA channels
+        # Handle RGBA images
         if content_array.shape[2] == 4:
-            foreground = content_array[:, :, :3]
-            alpha = content_array[:, :, 3]
-        else:
-            foreground = content_array
-            alpha = np.ones(content_array.shape[:2], dtype=np.uint8) * 255
+            content_array = content_array[..., :3]
 
-        # Resize style image
-        style_img = style_img.resize((foreground.shape[1], foreground.shape[0]))
-        style_array = np.array(style_img)
+        # Load and convert style image
+        style_image = Image.open(style_img)
+        style_array = np.array(style_image)
+        
+        if style_array.shape[2] == 4:
+            style_array = style_array[..., :3]
+   from flask import Flask, request, jsonify, send_file
+from PIL import Image
+import numpy as np
+import io
+import logging
+import traceback
 
-        # Normalize alpha
-        alpha = alpha.astype(np.float32) / 255.0
-        alpha = np.expand_dims(alpha, axis=-1)
+app = Flask(__name__)
+app.logger.setLevel(logging.INFO)
 
-        # Blend images
-        blended = (foreground * alpha) + (style_array * (1 - alpha))
-        return Image.fromarray(blended.astype(np.uint8))
+def validate_image(image):
+    try:
+        img = Image.open(image)
+        img.verify()
+        image.stream.seek(0)  # Reset file pointer
+        return True
+    except Exception as e:
+        app.logger.error(f"Invalid image file: {str(e)}")
+        return False
+
+def process_images(content_img, style_img):
+    try:
+        # Load and convert content image
+        content_image = Image.open(content_img)
+        content_array = np.array(content_image)
+        
+        # Handle RGBA images
+        if content_array.shape[2] == 4:
+            content_array = content_array[..., :3]
+
+        # Load and convert style image
+        style_image = Image.open(style_img)
+        style_array = np.array(style_image)
+        
+        if style_array.shape[2] == 4:
+            style_array = style_array[..., :3]
+
+        # --- Core Processing Logic ---
+        # Simple alpha blending for demonstration
+        # Replace this with your actual processing code
+        result_array = (content_array * 0.7 + style_array * 0.3).astype(np.uint8)
+        
+        # Convert numpy array back to PIL Image
+        result_img = Image.fromarray(result_array)
+        
+        return result_img
 
     except Exception as e:
-        app.logger.error(f"Processing error: {str(e)}")
+        app.logger.error(f"Processing error: {traceback.format_exc()}")
         raise
-
-@app.route('/')
-def home():
-    return render_template('index.html')
 
 @app.route('/process', methods=['POST'])
 def handle_processing():
     try:
-        app.logger.info("Headers: %s", request.headers)  # Add this
-        app.logger.info("Files received: %s", [(f.filename, f.content_type) for f in request.files.values()])
+        if 'files' not in request.files:
+            return jsonify({"error": "No files uploaded"}), 400
 
-        # Validate files
-        if 'content' not in request.files or 'style' not in request.files:
-            return jsonify({'error': 'Missing image files'}), 400
+        files = request.files.getlist('files')
+        app.logger.info(f"Files received: {[(f.filename, f.content_type) for f in files]}")
 
-        content_file = request.files['content']
-        style_file = request.files['style']
+        if len(files) != 2:
+            return jsonify({"error": "Exactly 2 images required"}), 400
 
-        # Validate extensions
-        allowed_extensions = {'png', 'jpg', 'jpeg'}
-        if not (content_file.filename.lower().endswith(tuple(allowed_extensions)) and
-                style_file.filename.lower().endswith(tuple(allowed_extensions))):
-            return jsonify({'error': 'Invalid file type. Use JPG/PNG only'}), 400
+        # Validate images before processing
+        if not all(validate_image(f) for f in files):
+            return jsonify({"error": "Invalid image file(s)"}), 400
 
         # Process images
-        content_img = Image.open(content_file.stream).convert('RGB')
-        style_img = Image.open(style_file.stream).convert('RGB')
-        result_img = process_images(content_img, style_img)
+        content_file = files[0]
+        style_file = files[1]
+        result_img = process_images(content_file, style_file)
 
-        # Convert to base64
-        def img_to_base64(img):
-            buff = io.BytesIO()
-            img.save(buff, format="PNG")
-            return base64.b64encode(buff.getvalue()).decode("utf-8")
+        # Prepare response
+        img_byte_arr = io.BytesIO()
+        result_img.save(img_byte_arr, format='JPEG')
+        img_byte_arr.seek(0)
 
-        return jsonify({
-            'content_img': img_to_base64(content_img),
-            'style_img': img_to_base64(style_img),
-            'result_img': img_to_base64(result_img)
-        })
+        return send_file(img_byte_arr, mimetype='image/jpeg')
 
     except Exception as e:
-        app.logger.exception("Server error during processing")
-        return jsonify({'error': str(e)}), 500
+        app.logger.error(f"Server error: {traceback.format_exc()}")
+        return jsonify({
+            "error": "Internal server error",
+            "message": str(e)
+        }), 500
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=10000, debug=False)
+        result_array = (content_array * 0.7 + style_array * 0.3).astype(np.uint8)
+        
+        # Convert numpy array back to PIL Image
+        result_img = Image.fromarray(result_array)
+        
+        return result_img
+
+    except Exception as e:
+        app.logger.error(f"Processing error: {traceback.format_exc()}")
+        raise
+
+@app.route('/process', methods=['POST'])
+def handle_processing():
+    try:
+        if 'files' not in request.files:
+            return jsonify({"error": "No files uploaded"}), 400
+
+        files = request.files.getlist('files')
+        app.logger.info(f"Files received: {[(f.filename, f.content_type) for f in files]}")
+
+        if len(files) != 2:
+            return jsonify({"error": "Exactly 2 images required"}), 400
+
+        # Validate images before processing
+        if not all(validate_image(f) for f in files):
+            return jsonify({"error": "Invalid image file(s)"}), 400
+
+        # Process images
+        content_file = files[0]
+        style_file = files[1]
+        result_img = process_images(content_file, style_file)
+
+        # Prepare response
+        img_byte_arr = io.BytesIO()
+        result_img.save(img_byte_arr, format='JPEG')
+        img_byte_arr.seek(0)
+
+        return send_file(img_byte_arr, mimetype='image/jpeg')
+
+    except Exception as e:
+        app.logger.error(f"Server error: {traceback.format_exc()}")
+        return jsonify({
+            "error": "Internal server error",
+            "message": str(e)
+        }), 500
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=10000, debug=False)
