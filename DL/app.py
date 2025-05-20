@@ -18,11 +18,10 @@ logging.basicConfig(level=logging.INFO)
 app.logger.setLevel(logging.DEBUG)
 
 def process_images(content_img, style_img):
-    """Process images and return blended result"""
     try:
-        # Remove background
-        content_clean = remove(content_img)
-        content_array = np.array(content_clean)
+        # Add memory cleanup
+        content_img = content_img.copy()
+        style_img = style_img.copy()
         
         # Handle RGBA channels
         if content_array.shape[2] == 4:
