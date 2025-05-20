@@ -130,10 +130,11 @@ clearTimeout(timeoutId);
             } catch (error) {
     if (error.name === 'AbortError') {
         alert('Server timeout - try smaller images');
-            } finally {
+    }
+            }   
+        finally {
                 loading.style.display = 'none';
             }
-        });
     </script>
 </body>
 </html>
