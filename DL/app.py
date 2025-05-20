@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify, send_file
+from flask_cors import CORS  # Add CORS support
 from PIL import Image
 import numpy as np
 import io
@@ -6,13 +7,14 @@ import logging
 import traceback
 
 app = Flask(__name__)
-app.logger.setLevel(logging.INFO)
+CORS(app)  # Enable CORS for cross-origin requests
+app.logger.setLevel(logging.DEBUG)  # Increase logging verbosity
 
 def validate_image(image):
     try:
         img = Image.open(image)
         img.verify()
-        image.stream.seek(0)  # Reset file pointer
+        image.stream.seek(0)  # Critical: Reset file pointer after verification
         return True, None
     except Exception as e:
         error_msg = f"Invalid image file {image.filename}: {str(e)}"
@@ -21,56 +23,49 @@ def validate_image(image):
 
 def process_images(content_img, style_img):
     try:
-        # Load and convert images
-        content_image = Image.open(content_img)
-        style_image = Image.open(style_img)
+        # Load images with explicit format handling
+        content_image = Image.open(content_img).convert('RGB')
+        style_image = Image.open(style_img).convert('RGB')
         
-        # Convert to arrays
+        # Convert to numpy arrays
         content_array = np.array(content_image)
         style_array = np.array(style_image)
 
-        # Handle alpha channels
-        if content_array.shape[2] == 4:
-            content_array = content_array[..., :3]
-        if style_array.shape[2] == 4:
-            style_array = style_array[..., :3]
-
-        # Check image sizes
+        # Ensure same dimensions
         if content_array.shape != style_array.shape:
-            raise ValueError(
-                f"Image size mismatch. Content: {content_array.shape}, Style: {style_array.shape}"
-            )
+            content_image = content_image.resize(style_image.size)
+            content_array = np.array(content_image)
 
         # Demo processing (replace with your actual logic)
         result_array = (content_array * 0.7 + style_array * 0.3).astype(np.uint8)
-        return Image.fromarray(result_array)
+        result_img = Image.fromarray(result_array)
+        
+        app.logger.debug("Successfully generated result image")
+        return result_img
 
     except Exception as e:
-        app.logger.error(f"Processing error: {traceback.format_exc()}")
+        app.logger.error(f"Processing failed: {traceback.format_exc()}")
         raise
 
 @app.route('/process', methods=['POST'])
 def handle_processing():
     try:
+        app.logger.debug("Received request with headers: %s", request.headers)
+        
         if 'files' not in request.files:
-            return jsonify({
-                "status": "error",
-                "message": "No files uploaded"
-            }), 400
+            app.logger.error("No files part in request")
+            return jsonify({"status": "error", "message": "No files uploaded"}), 400
 
         files = request.files.getlist('files')
-        app.logger.info(f"Files received: {[(f.filename, f.content_type) for f in files]}")
+        app.logger.debug("Received %d files", len(files))
 
         if len(files) != 2:
-            return jsonify({
-                "status": "error",
-                "message": "Exactly 2 images required"
-            }), 400
+            return jsonify({"status": "error", "message": "Exactly 2 images required"}), 400
 
-        # Validate images
+        # Validate images with detailed feedback
         validations = [validate_image(f) for f in files]
         if not all(valid for valid, _ in validations):
-            errors = [msg for _, msg in validations if msg is not None]
+            errors = [msg for _, msg in validations if msg]
             return jsonify({
                 "status": "error",
                 "message": "Invalid image files",
@@ -81,20 +76,22 @@ def handle_processing():
         content_file, style_file = files
         result_img = process_images(content_file, style_file)
 
-        # Return result
+        # Prepare response with explicit encoding
         img_byte_arr = io.BytesIO()
-        result_img.save(img_byte_arr, format='JPEG')
+        result_img.save(img_byte_arr, format='JPEG', quality=95)
         img_byte_arr.seek(0)
-        
+        app.logger.debug("Sending response with image size: %d bytes", img_byte_arr.getbuffer().nbytes)
+
         return send_file(img_byte_arr, mimetype='image/jpeg')
 
     except Exception as e:
-        app.logger.error(f"Server error: {traceback.format_exc()}")
+        app.logger.error("Critical error: %s", traceback.format_exc())
         return jsonify({
             "status": "error",
-            "message": "Internal server error",
-            "error_details": str(e)
+            "message": "Processing failed",
+            "error": str(e),
+            "trace": traceback.format_exc()
         }), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=10000, debug=False)
+    app.run(host='0.0.0.0', port=10000, debug=True)
