@@ -55,7 +55,8 @@ def home():
 @app.route('/process', methods=['POST'])
 def handle_processing():
     try:
-        app.logger.debug("Incoming request files: %s", request.files)
+        app.logger.info("Headers: %s", request.headers)  # Add this
+        app.logger.info("Files received: %s", [(f.filename, f.content_type) for f in request.files.values()])
 
         # Validate files
         if 'content' not in request.files or 'style' not in request.files:
