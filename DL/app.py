@@ -13,34 +13,37 @@ def validate_image(image):
         img = Image.open(image)
         img.verify()
         image.stream.seek(0)  # Reset file pointer
-        return True
+        return True, None
     except Exception as e:
-        app.logger.error(f"Invalid image file: {str(e)}")
-        return False
+        error_msg = f"Invalid image file {image.filename}: {str(e)}"
+        app.logger.error(error_msg)
+        return False, error_msg
 
 def process_images(content_img, style_img):
     try:
-        # Load and convert content image
+        # Load and convert images
         content_image = Image.open(content_img)
-        content_array = np.array(content_image)
+        style_image = Image.open(style_img)
         
-        # Handle RGBA images
+        # Convert to arrays
+        content_array = np.array(content_image)
+        style_array = np.array(style_image)
+
+        # Handle alpha channels
         if content_array.shape[2] == 4:
             content_array = content_array[..., :3]
-
-        # Load and convert style image
-        style_image = Image.open(style_img)
-        style_array = np.array(style_image)
-        
         if style_array.shape[2] == 4:
             style_array = style_array[..., :3]
 
-        # Simple alpha blending for demonstration
+        # Check image sizes
+        if content_array.shape != style_array.shape:
+            raise ValueError(
+                f"Image size mismatch. Content: {content_array.shape}, Style: {style_array.shape}"
+            )
+
+        # Demo processing (replace with your actual logic)
         result_array = (content_array * 0.7 + style_array * 0.3).astype(np.uint8)
-        
-        # Convert numpy array back to PIL Image
-        result_img = Image.fromarray(result_array)
-        return result_img
+        return Image.fromarray(result_array)
 
     except Exception as e:
         app.logger.error(f"Processing error: {traceback.format_exc()}")
@@ -50,35 +53,47 @@ def process_images(content_img, style_img):
 def handle_processing():
     try:
         if 'files' not in request.files:
-            return jsonify({"error": "No files uploaded"}), 400
+            return jsonify({
+                "status": "error",
+                "message": "No files uploaded"
+            }), 400
 
         files = request.files.getlist('files')
         app.logger.info(f"Files received: {[(f.filename, f.content_type) for f in files]}")
 
         if len(files) != 2:
-            return jsonify({"error": "Exactly 2 images required"}), 400
+            return jsonify({
+                "status": "error",
+                "message": "Exactly 2 images required"
+            }), 400
 
         # Validate images
-        if not all(validate_image(f) for f in files):
-            return jsonify({"error": "Invalid image file(s)"}), 400
+        validations = [validate_image(f) for f in files]
+        if not all(valid for valid, _ in validations):
+            errors = [msg for _, msg in validations if msg is not None]
+            return jsonify({
+                "status": "error",
+                "message": "Invalid image files",
+                "errors": errors
+            }), 400
 
         # Process images
-        content_file = files[0]
-        style_file = files[1]
+        content_file, style_file = files
         result_img = process_images(content_file, style_file)
 
-        # Prepare response
+        # Return result
         img_byte_arr = io.BytesIO()
         result_img.save(img_byte_arr, format='JPEG')
         img_byte_arr.seek(0)
-
+        
         return send_file(img_byte_arr, mimetype='image/jpeg')
 
     except Exception as e:
         app.logger.error(f"Server error: {traceback.format_exc()}")
         return jsonify({
-            "error": "Internal server error",
-            "message": str(e)
+            "status": "error",
+            "message": "Internal server error",
+            "error_details": str(e)
         }), 500
 
 if __name__ == '__main__':
