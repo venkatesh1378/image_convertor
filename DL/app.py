@@ -1,36 +1,49 @@
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from PIL import Image
-import numpy as np
 import io
 import logging
 from rembg import remove
 
 app = Flask(__name__)
-CORS(app)
-app.logger.setLevel(logging.INFO)
+CORS(app, resources={r"/process": {"origins": "*"}})  # Explicit CORS config
 
-MAX_SIZE = 1024  # Max dimension for processing
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-def process_images(content_img, style_img):
-    try:
-        # Process content image (remove background)
-        content_image = Image.open(content_img).convert("RGBA")
-        content_image.thumbnail((MAX_SIZE, MAX_SIZE))
-        content_clean = remove(content_image)  # Background removal
+@app.route('/process', methods=['POST', 'OPTIONS'])
+def handle_processing():
+       try:
+        logger.info("Received request with headers: %s", request.headers)
         
-        # Process style image (new background)
-        style_image = Image.open(style_img).convert("RGBA")
-        style_image = style_image.resize(content_clean.size)
+        if 'files' not in request.files:
+            logger.error("No files part in request")
+            return jsonify({"error": "No files uploaded"}), 400
+
+        files = request.files.getlist('files')
+        if len(files) != 2:
+            return jsonify({"error": "Exactly 2 images required"}), 400
+
+        # Process images
+        content_file, style_file = files
+        result_img = process_images(content_file, style_file)
+
+        # Prepare response
+        img_byte_arr = io.BytesIO()
+        result_img.save(img_byte_arr, "JPEG")
+        img_byte_arr.seek(0)
         
-        # Combine images
-        composite = Image.alpha_composite(style_image, content_clean)
-        
-        return composite.convert("RGB")
+       response = send_file(img_byte_arr, mimetype="image/jpeg")
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        return response
 
     except Exception as e:
-        app.logger.error(f"Processing error: {str(e)}")
-        raise
+        logger.error(f"Error: {str(e)}")
+        return jsonify({
+            "error": "Processing failed",
+            "message": str(e)
+        }), 500
 
 @app.route('/process', methods=['POST'])
 def handle_processing():
